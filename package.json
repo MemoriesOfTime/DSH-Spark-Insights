@@ -1,0 +1,61 @@
+{
+  "name": "dsh-spark-insights",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Read spark profiler and heap exports from Minecraft servers and report TPS, MSPT, CPU, memory, GC, hotspots, and plugin attribution.",
+  "license": "GPL-3.0-only",
+  "author": "MemoriesOfTime and contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MemoriesOfTime/DSH-Spark-Insights.git"
+  },
+  "bugs": "https://github.com/MemoriesOfTime/DSH-Spark-Insights/issues",
+  "homepage": "https://github.com/MemoriesOfTime/DSH-Spark-Insights#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "minecraft",
+    "spark",
+    "profiler",
+    "nukkit",
+    "performance"
+  ],
+  "scripts": {
+    "test": "node --test test/spark.test.mjs",
+    "generate:proto": "pbjs -t static-module -w es6 -p proto -o lib/spark-pb.js proto/spark/spark_sampler.proto proto/spark/spark_heap.proto && node scripts/postprocess-proto.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "lib/*.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "NOTICE",
+    "SECURITY.md",
+    "proto/**/*.proto",
+    "proto/**/*.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "protobufjs": "^7.6.6"
+  },
+  "devDependencies": {
+    "protobufjs-cli": "^2.0.0"
+  }
+}

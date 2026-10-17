@@ -1,0 +1,111 @@
+# Release workflow: publish to npm and create a GitHub Release.
+#
+# Trigger: push a version tag, e.g.
+#   git tag v1.0.0
+#   git push origin v1.0.0
+#
+# Steps:
+#   1. Run the full test matrix (test.yml only covers main and PRs).
+#   2. Refuse to publish when the tag does not match package.json "version".
+#   3. npm publish --provenance (requires a PUBLIC repository, npm >= 9.5,
+#      id-token: write, and the NPM_TOKEN secret as an Automation token).
+#   4. Create a GitHub Release with notes taken from the matching
+#      CHANGELOG.md section and attach the packed tarball.
+#
+# Required secret: NPM_TOKEN (npm Access Token, type "Automation" so it
+# bypasses 2FA-only restrictions; classic Granular tokens also work).
+# Optional hardening: point the publish job at a GitHub environment (e.g.
+# "npm") with required reviewers.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub Release
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        # --access public is required for provenance on a package's first
+        # publish (npm cannot confirm registry visibility in advance).
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Pack tarball for the GitHub Release
+        run: |
+          mkdir -p dist
+          npm pack --pack-destination dist
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # First "## [x.y.z]" section, without the trailing link footer.
+          NOTES="$(awk '/^## \[/{if (f) exit; f=1} f' CHANGELOG.md)"
+          {
+            echo 'notes<<EOF'
+            printf '%s\n' "$NOTES"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ steps.notes.outputs.notes }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/*.tgz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/*.tgz \
+              --verify-tag \
+              --title "$GITHUB_REF_NAME" \
+              --notes "$NOTES"
+          fi

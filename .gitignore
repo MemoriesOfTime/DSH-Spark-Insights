@@ -1,0 +1,21 @@
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Editors
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+*.log
+coverage/
+*.tgz
+
+# Local spark exports and scratch test artifacts
+test/*.sparkprofile
+test/*.sparkheap
+test/*.sparkhealth

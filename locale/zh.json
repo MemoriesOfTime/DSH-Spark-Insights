@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "DSH Spark Insights",
+    "description": "解析 Minecraft 服务器 spark 性能采样与堆转储，汇总 TPS、MSPT、CPU、内存、GC、热点方法和插件占用。"
+  }
+}

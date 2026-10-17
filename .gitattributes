@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.svg text
+lib/spark-pb.js linguist-generated=true
+package-lock.json linguist-generated=true

@@ -7,13 +7,16 @@
 # Steps:
 #   1. Run the full test matrix (test.yml only covers main and PRs).
 #   2. Refuse to publish when the tag does not match package.json "version".
-#   3. npm publish --provenance (requires a PUBLIC repository, npm >= 9.5,
-#      id-token: write, and the NPM_TOKEN secret as an Automation token).
+#   3. npm stage publish --provenance --access public (stages the release;
+#      a maintainer then promotes it on npmjs.com with 2FA).
 #   4. Create a GitHub Release with notes taken from the matching
 #      CHANGELOG.md section and attach the packed tarball.
 #
-# Required secret: NPM_TOKEN (npm Access Token, type "Automation" so it
-# bypasses 2FA-only restrictions; classic Granular tokens also work).
+# Required secret: NPM_TOKEN (a Granular "Read and write" token allowed to
+# publish to the npm STAGING AREA). Since npm's 2026 security change,
+# direct publishes always require an interactive OTP, so CI cannot publish
+# directly. NOTE: a brand-new package cannot be created from staging —
+# bootstrap it once locally with `npm publish --access public --otp=...`.
 # Optional hardening: point the publish job at a GitHub environment (e.g.
 # "npm") with required reviewers.
 
@@ -73,10 +76,12 @@ jobs:
             exit 1
           fi
 
-      - name: Publish to npm
-        # --access public is required for provenance on a package's first
-        # publish (npm cannot confirm registry visibility in advance).
-        run: npm publish --provenance --access public
+      - name: Stage publish to npm
+        # npm now forces 2FA on direct publishes, which CI cannot satisfy.
+        # Stage the release instead; a maintainer promotes it on npmjs.com
+        # (with 2FA) to make it live. --access public keeps provenance valid
+        # on a package's first publish.
+        run: npm stage publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

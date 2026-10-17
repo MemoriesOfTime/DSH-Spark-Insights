@@ -7,16 +7,19 @@
 # Steps:
 #   1. Run the full test matrix (test.yml only covers main and PRs).
 #   2. Refuse to publish when the tag does not match package.json "version".
-#   3. npm stage publish --provenance --access public (stages the release;
-#      a maintainer then promotes it on npmjs.com with 2FA).
+#   3. npm stage publish --provenance --access public (stages the release,
+#      also works for brand-new packages; a maintainer then runs
+#      `npm stage approve <stage-id>` locally with 2FA to publish).
 #   4. Create a GitHub Release with notes taken from the matching
 #      CHANGELOG.md section and attach the packed tarball.
 #
-# Required secret: NPM_TOKEN (a Granular "Read and write" token allowed to
-# publish to the npm STAGING AREA). Since npm's 2026 security change,
-# direct publishes always require an interactive OTP, so CI cannot publish
-# directly. NOTE: a brand-new package cannot be created from staging —
-# bootstrap it once locally with `npm publish --access public --otp=...`.
+# Required secret: NPM_TOKEN (a Granular "Read and write" token without
+# 2FA bypass, allowed to stage-publish this package). Since npm's 2026
+# security change, direct publishes always require an interactive OTP, so
+# CI stages releases and approval happens out-of-band. The stage command
+# requires npm >= 12, which the workflow installs explicitly.
+# Future hardening: replace the token with an npm trust relationship
+# (OIDC, `npm trust github --allow-stage-publish`).
 # Optional hardening: point the publish job at a GitHub environment (e.g.
 # "npm") with required reviewers.
 
@@ -38,8 +41,8 @@ jobs:
       matrix:
         node: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -56,13 +59,21 @@ jobs:
       contents: write # create the GitHub Release
       id-token: write # npm provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
+          # check-latest resolves "22" to the newest patch release;
+          # npm@12 needs node >= 22.22.2.
+          check-latest: true
           cache: npm
           registry-url: https://registry.npmjs.org
+
+      - name: Upgrade npm
+        # npm@12 engines: node ^22.22.2 || ^24.15.0 || >=26 — setup-node's
+        # "22" resolves to the newest 22.x patch, which satisfies this.
+        run: npm install -g npm@12
 
       - name: Install dependencies
         run: npm ci
@@ -78,10 +89,26 @@ jobs:
 
       - name: Stage publish to npm
         # npm now forces 2FA on direct publishes, which CI cannot satisfy.
-        # Stage the release instead; a maintainer promotes it on npmjs.com
-        # (with 2FA) to make it live. --access public keeps provenance valid
-        # on a package's first publish.
-        run: npm stage publish --provenance --access public
+        # Stage the release instead (works for brand-new packages too), then
+        # a maintainer runs locally with npm >= 12:
+        #   npm stage approve <stage-id>   # prompts for 2FA
+        # --access public keeps provenance valid on a package's first publish.
+        # --json exposes the stageId, surfaced in the Step Summary below.
+        run: |
+          npm stage publish --provenance --access public --json > staged.json
+          cat staged.json
+          STAGE_ID="$(node -e '
+            try {
+              const j = JSON.parse(require("fs").readFileSync("staged.json", "utf8"))
+              process.stdout.write(j.stageId || "")
+            } catch { /* keep empty; the log above still shows the id */ }
+          ')"
+          if [ -n "$STAGE_ID" ]; then
+            {
+              echo "### Staged for npm — awaiting approval"
+              echo 'Approve locally with `npm stage approve '"$STAGE_ID"'` (2FA required).'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
